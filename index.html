@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        .status { font-size: 20px; font-weight: bold; }
+        table { width: 80%; margin: auto; border-collapse: collapse; }
+        th, td { border: 1px solid black; padding: 10px; }
+        .online { color: green; }
+        .offline { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Discord Bot Status</h1>
+    <p class="status">Bot Status: <span id="botStatus" class="offline">Offline</span></p>
+
+    <h2>Flagged Roblox Users</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+            </tr>
+        </thead>
+        <tbody id="userList"></tbody>
+    </table>
+
+    <script>
+        async function fetchFlaggedUsers() {
+            const response = await fetch("https://raw.githubusercontent.com/yourusername/roblox-flagged-users/main/flagged_users.json");
+            const users = await response.json();
+            const tableBody = document.getElementById("userList");
+            tableBody.innerHTML = users.map(user => `<tr><td>${user}</td></tr>`).join('');
+        }
+
+        async function checkBotStatus() {
+            try {
+                const response = await fetch("https://your-bot-server.com/status");
+                const data = await response.json();
+                const statusElement = document.getElementById("botStatus");
+                if (data.status === "online") {
+                    statusElement.textContent = "Online";
+                    statusElement.classList.remove("offline");
+                    statusElement.classList.add("online");
+                } else {
+                    statusElement.textContent = "Offline";
+                }
+            } catch {
+                document.getElementById("botStatus").textContent = "Offline";
+            }
+        }
+
+        fetchFlaggedUsers();
+        setInterval(checkBotStatus, 5000);
+    </script>
+</body>
+</html>
