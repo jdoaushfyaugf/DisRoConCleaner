@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, PermissionsBitField } = require("discord.js");
 const axios = require("axios");
-const express = require("express");
+const { Octokit } = require("@octokit/rest");
 require("dotenv").config();
 
 const client = new Client({
@@ -12,28 +12,57 @@ const client = new Client({
     ],
 });
 
-// Express Server for Bot Status
-const app = express();
-app.get("/status", (req, res) => {
-    res.json({ status: client.isReady() ? "online" : "offline" });
-});
-app.listen(3000, () => console.log("Status server running on port 3000"));
-
-const GITHUB_REPO = "yourusername/roblox-flagged-users";
+// GitHub Setup
+const GITHUB_REPO = "jdoaushfyaugf/roblox-flagged-users";
 const GITHUB_FILE = "flagged_users.json";
+const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 
 // Fetch flagged users from GitHub
 async function fetchFlaggedUsers() {
     try {
         const response = await axios.get(`https://raw.githubusercontent.com/${GITHUB_REPO}/main/${GITHUB_FILE}`);
-        return response.data;
+        return response.data.split("\n").filter(line => line.trim() !== ""); // Return as an array
     } catch (error) {
         console.error("Error fetching flagged users:", error);
         return [];
     }
 }
 
-// !scan command - Finds flagged users in the server
+// Update flagged_users.json in GitHub
+async function updateFlaggedUsers(newUserURL) {
+    try {
+        const { data: fileData } = await octokit.repos.getContent({
+            owner: "yourusername",
+            repo: "roblox-flagged-users",
+            path: GITHUB_FILE,
+        });
+
+        // Decode existing file content
+        const existingContent = Buffer.from(fileData.content, "base64").toString("utf-8");
+        const flaggedUsers = existingContent.split("\n").map(user => user.trim());
+
+        // Add new user if not already in the list
+        if (!flaggedUsers.includes(newUserURL)) {
+            flaggedUsers.push(newUserURL);
+
+            // Update GitHub file
+            await octokit.repos.createOrUpdateFileContents({
+                owner: "yourusername",
+                repo: "roblox-flagged-users",
+                path: GITHUB_FILE,
+                message: `Added flagged user: ${newUserURL}`,
+                content: Buffer.from(flaggedUsers.join("\n")).toString("base64"),
+                sha: fileData.sha,
+            });
+
+            console.log(`✅ Added ${newUserURL} to flagged users.`);
+        }
+    } catch (error) {
+        console.error("Error updating flagged users list:", error);
+    }
+}
+
+// !scan command - Finds flagged users and adds them to GitHub
 client.on("messageCreate", async (message) => {
     if (!message.content.startsWith("!scan") || message.author.bot) return;
     if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
@@ -41,22 +70,25 @@ client.on("messageCreate", async (message) => {
     }
 
     const flaggedUsers = await fetchFlaggedUsers();
-    let foundUsers = [];
+    let newFlagged = [];
 
     for (const member of message.guild.members.cache.values()) {
-        if (flaggedUsers.includes(member.user.username)) {
-            foundUsers.push(`${member.user.tag} (${member.id})`);
+        const robloxURL = `https://roblox.com/users/${member.user.id}/profile`;
+
+        if (!flaggedUsers.includes(robloxURL)) {
+            await updateFlaggedUsers(robloxURL);
+            newFlagged.push(robloxURL);
         }
     }
 
-    if (foundUsers.length === 0) {
-        return message.reply("No flagged users found.");
+    if (newFlagged.length > 0) {
+        message.reply(`🚨 **New Flagged Users Added:**\n${newFlagged.join("\n")}`);
+    } else {
+        message.reply("No new flagged users found.");
     }
-
-    message.reply(`🚨 **Flagged Users in Server:**\n${foundUsers.join("\n")}`);
 });
 
-// !banflagged command - Bans flagged users in the server
+// !banflagged command - Bans flagged users
 client.on("messageCreate", async (message) => {
     if (message.content !== "!banflagged" || message.author.bot) return;
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -67,10 +99,12 @@ client.on("messageCreate", async (message) => {
     let bannedUsers = [];
 
     for (const member of message.guild.members.cache.values()) {
-        if (flaggedUsers.includes(member.user.username)) {
+        const robloxURL = `https://roblox.com/users/${member.user.id}/profile`;
+
+        if (flaggedUsers.includes(robloxURL)) {
             try {
                 await member.ban({ reason: "Flagged for condo/NSFW activity" });
-                bannedUsers.push(member.user.tag);
+                bannedUsers.push(robloxURL);
             } catch (err) {
                 console.error(`Failed to ban ${member.user.tag}:`, err);
             }
